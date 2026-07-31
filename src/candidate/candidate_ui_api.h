@@ -23,6 +23,7 @@ typedef struct llavon_candidate_ui_string_view {
 
 typedef struct llavon_candidate_ui_presentation {
     uint32_t struct_size;
+    uint64_t owner_window;
     int32_t anchor_x;
     int32_t anchor_y;
     uint32_t candidate_count;

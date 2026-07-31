@@ -62,6 +62,7 @@ bool CandidateUiLoader::present(const CandidateUiSnapshot& snapshot) {
 
     const llavon_candidate_ui_presentation presentation{
         sizeof(llavon_candidate_ui_presentation),
+        snapshot.owner_window,
         snapshot.anchor_x,
         snapshot.anchor_y,
         static_cast<uint32_t>(candidates.size()),

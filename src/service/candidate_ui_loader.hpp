@@ -12,6 +12,7 @@
 namespace llavon::service {
 
 struct CandidateUiSnapshot final {
+    uint64_t owner_window = 0;
     int32_t anchor_x = 0;
     int32_t anchor_y = 0;
     std::vector<std::wstring> candidates;

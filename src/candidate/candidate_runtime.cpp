@@ -29,6 +29,7 @@ constexpr uint32_t maximum_candidate_length = 256;
 constexpr uint32_t maximum_layout_columns = 4;
 
 struct Presentation final {
+    HWND owner_window = nullptr;
     int anchor_x = 0;
     int anchor_y = 0;
     std::vector<std::wstring> candidates;
@@ -135,6 +136,8 @@ private:
         }
 
         try {
+            destination.owner_window = reinterpret_cast<HWND>(
+                static_cast<ULONG_PTR>(source->owner_window));
             destination.anchor_x = source->anchor_x;
             destination.anchor_y = source->anchor_y;
             destination.selection_index = source->selection_index;
@@ -264,6 +267,7 @@ private:
             return;
         }
 
+        candidate_window_->set_owner_window(presentation->owner_window);
         candidate_window_->set_layout_columns(presentation->layout_columns);
         candidate_window_->set_number_column(presentation->number_column);
         candidate_window_->set_page_navigation(

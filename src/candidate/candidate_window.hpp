@@ -53,6 +53,9 @@ public:
     }
 
     void set_owner_window(HWND owner_window) noexcept {
+        if (owner_window != nullptr && !IsWindow(owner_window)) {
+            owner_window = nullptr;
+        }
         if (owner_window_ == owner_window) {
             return;
         }
