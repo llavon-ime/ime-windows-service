@@ -15,6 +15,8 @@
 #include <string_view>
 #include <vector>
 
+#include "candidate_pipe_server.hpp"
+
 namespace llavon::service {
 
 namespace prediction_pipe {
@@ -351,8 +353,10 @@ inline asio::awaitable<void> listener(
 
 class PredictionPipeServer final {
 public:
-    explicit PredictionPipeServer(llavon::ime::core::CoreConfig config)
-        : core_(std::make_shared<llavon::ime::core::Core>(std::move(config))) {}
+    PredictionPipeServer(
+        llavon::ime::core::CoreConfig config, CandidateUiLoader& candidate_ui)
+        : core_(std::make_shared<llavon::ime::core::Core>(std::move(config))),
+          candidate_ui_(candidate_ui) {}
 
     const char* name() const {
         return "prediction-pipe";
@@ -368,7 +372,9 @@ public:
         std::clog << "[SRV] model loaded\n";
 
         asio::io_context io_ctx;
+        CandidatePipeServer candidate_pipe(candidate_ui_);
         co_spawn(io_ctx, prediction_pipe::listener(io_ctx, core_), asio::detached);
+        co_spawn(io_ctx, candidate_pipe.listen(), asio::detached);
         io_ctx.run();
 
         return 0;
@@ -376,6 +382,7 @@ public:
 
 private:
     std::shared_ptr<llavon::ime::core::Core> core_;
+    CandidateUiLoader& candidate_ui_;
 };
 
 }  // namespace llavon::service

@@ -2,6 +2,7 @@
 #include <windows.h>
 
 #include "service/prediction_pipe_server.hpp"
+#include "service/candidate_ui_loader.hpp"
 #include "service/settings_ui_loader.hpp"
 #include "service/tray_icon.hpp"
 
@@ -88,9 +89,11 @@ llavon::ime::core::CoreConfig parse_core_config(int argc, char* argv[]) {
     throw std::invalid_argument("invalid command line");
 }
 
-int run_server(llavon::ime::core::CoreConfig config) noexcept {
+int run_server(
+    llavon::ime::core::CoreConfig config,
+    llavon::service::CandidateUiLoader& candidate_ui) noexcept {
     try {
-        llavon::service::PredictionPipeServer server(std::move(config));
+        llavon::service::PredictionPipeServer server(std::move(config), candidate_ui);
         std::clog << "[SRV] prediction transport: " << server.name() << '\n';
         return server.run();
     } catch (const std::exception& error) {
@@ -111,16 +114,17 @@ int main(int argc, char* argv[]) {
 
         auto config = parse_core_config(argc, argv);
 
+        llavon::service::CandidateUiLoader candidate_ui;
         llavon::service::SettingsUiLoader settings_ui;
         llavon::service::TrayIcon tray;
         if (!tray.create(GetModuleHandleW(nullptr), [&settings_ui] { settings_ui.show(); })) {
             std::cerr << "[WARN] tray initialization failed: " << GetLastError() << '\n';
-            return run_server(std::move(config));
+            return run_server(std::move(config), candidate_ui);
         }
 
         int server_result = 1;
-        std::thread server_thread([&tray, &server_result, config = std::move(config)]() mutable {
-            server_result = run_server(std::move(config));
+        std::thread server_thread([&tray, &candidate_ui, &server_result, config = std::move(config)]() mutable {
+            server_result = run_server(std::move(config), candidate_ui);
             tray.notify_server_stopped(server_result);
         });
 

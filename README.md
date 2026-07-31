@@ -12,13 +12,18 @@ The service also owns the interactive per-user process shell:
   and inbox `Windows.UI.Xaml` island.
 - Settings UI calls are queued to the DLL's STA thread and never execute XAML
   or model work on the inference worker.
+- `llavon-ime-candidate-ui.dll` is loaded on the first candidate presentation.
+  It owns one dedicated STA thread, one candidate HWND, and its own XAML island.
+- Candidate presentation snapshots arrive through the independent
+  `\\.\pipe\llavon-ime-candidate-ui` pipe. This transport does not share the
+  prediction pipe's connection or protocol.
 - The settings page compares the CI build number embedded at package build time
   with the rolling release's `latest.json` manifest. Commit IDs are diagnostic
   only, so rebases do not affect ordering. Its HTTP request runs on a settings
   worker and is canceled after 300 ms.
 
-The settings module is intentionally a DLL rather than another executable.
-Candidate UI will be added as a separate DLL with its own HWND and STA thread.
+The settings and candidate modules are intentionally separate DLLs rather than
+additional executables. They do not share an HWND or STA thread.
 
 Source code is divided by runtime responsibility rather than operating-system
 name:
@@ -26,14 +31,16 @@ name:
 - `src/service/`: resident EXE responsibilities, including prediction IPC,
   tray ownership, and loading UI modules.
 - `src/settings/`: the settings DLL, its STA runtime, HWND, and XAML island.
-- `src/candidate/`: reserved for the future candidate UI DLL; it will not share
-  the settings DLL's thread or HWND.
+- `src/candidate/`: the candidate UI DLL, its STA runtime, single HWND, and XAML
+  island.
 
 The service keeps the existing executable and IPC compatibility names:
 
 - executable: `llavon-ime-service.exe`
 - settings UI module: `llavon-ime-settings-ui.dll`
+- candidate UI module: `llavon-ime-candidate-ui.dll`
 - named pipe: `\\.\pipe\llavon-ime`
+- candidate UI named pipe: `\\.\pipe\llavon-ime-candidate-ui`
 - model path: `LLAVON_IME_MODEL_PATH`
 - tables path: `LLAVON_IME_TABLES_DIR`
 
