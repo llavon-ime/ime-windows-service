@@ -1,5 +1,14 @@
 cmake_minimum_required(VERSION 3.24)
 
+set(IME_WINDOWS_SERVICE_VERSION "0.1.0" CACHE STRING "Llavon IME package version")
+set(IME_WINDOWS_SERVICE_BUILD_COMMIT "unknown" CACHE STRING
+    "Root ime-windows repository commit embedded in the service UI")
+set(IME_WINDOWS_SERVICE_BUILD_NUMBER "0" CACHE STRING
+    "CI build number embedded in the service UI")
+if(NOT IME_WINDOWS_SERVICE_BUILD_NUMBER MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "IME_WINDOWS_SERVICE_BUILD_NUMBER must be a non-negative integer")
+endif()
+
 if(NOT DEFINED IME_WINDOWS_SERVICE_SUPERBUILD)
     set(IME_WINDOWS_SERVICE_SUPERBUILD ON CACHE BOOL "Build ime-core before the Windows service")
 endif()
@@ -9,7 +18,7 @@ if(IME_WINDOWS_SERVICE_SUPERBUILD)
     # unused third vcpkg tree for this orchestration-only configure.
     set(VCPKG_MANIFEST_INSTALL OFF CACHE BOOL "Install superbuild dependencies" FORCE)
 
-    project(ime_windows_service VERSION 0.1.0 LANGUAGES NONE)
+    project(ime_windows_service VERSION ${IME_WINDOWS_SERVICE_VERSION} LANGUAGES NONE)
 
     include(ExternalProject)
 
@@ -82,6 +91,9 @@ if(IME_WINDOWS_SERVICE_SUPERBUILD)
         INSTALL_DIR "${CMAKE_INSTALL_PREFIX}"
         CMAKE_ARGS
             "-DIME_WINDOWS_SERVICE_SUPERBUILD:BOOL=OFF"
+            "-DIME_WINDOWS_SERVICE_VERSION:STRING=${IME_WINDOWS_SERVICE_VERSION}"
+            "-DIME_WINDOWS_SERVICE_BUILD_COMMIT:STRING=${IME_WINDOWS_SERVICE_BUILD_COMMIT}"
+            "-DIME_WINDOWS_SERVICE_BUILD_NUMBER:STRING=${IME_WINDOWS_SERVICE_BUILD_NUMBER}"
             "-DCMAKE_BUILD_TYPE:STRING=${IME_WINDOWS_SERVICE_CONFIGURATION}"
             "-DCMAKE_INSTALL_PREFIX:PATH=<INSTALL_DIR>"
             "-DCMAKE_TOOLCHAIN_FILE:FILEPATH=${CMAKE_TOOLCHAIN_FILE}"
@@ -126,7 +138,7 @@ if(IME_WINDOWS_SERVICE_SUPERBUILD)
     return()
 endif()
 
-project(ime_windows_service VERSION 0.1.0 LANGUAGES CXX)
+project(ime_windows_service VERSION ${IME_WINDOWS_SERVICE_VERSION} LANGUAGES CXX RC)
 
 if(NOT WIN32)
     message(FATAL_ERROR "ime-windows-service is Windows-only")
@@ -143,19 +155,55 @@ endif()
 list(PREPEND CMAKE_PREFIX_PATH "${IME_CORE_VCPKG_PREFIX}")
 
 find_package(asio CONFIG REQUIRED)
+find_package(cppwinrt CONFIG REQUIRED)
 find_package(ime-core CONFIG REQUIRED)
 
 add_executable(llavon-ime-service
+    src/assets/llavon_tray.jpg
+    src/assets/llavon_tray.ico
     src/main.cpp
-    src/platform/windows_named_pipe_server.hpp
+    src/resource.h
+    src/service/prediction_pipe_server.hpp
+    src/service/settings_ui_loader.cpp
+    src/service/settings_ui_loader.hpp
+    src/service/tray_icon.cpp
+    src/service/tray_icon.hpp
+    src/service.rc
+)
+
+add_library(llavon-ime-settings-ui SHARED
+    src/settings/settings_runtime.cpp
+    src/settings/settings_ui_api.h
+    src/settings/settings_window.cpp
+    src/settings/settings_window.hpp
+    src/settings/update_checker.cpp
+    src/settings/update_checker.hpp
 )
 
 target_compile_features(llavon-ime-service PRIVATE cxx_std_23)
+target_compile_features(llavon-ime-settings-ui PRIVATE cxx_std_23)
 set_target_properties(llavon-ime-service PROPERTIES
     CXX_STANDARD_REQUIRED YES
     CXX_EXTENSIONS NO
 )
+set_target_properties(llavon-ime-settings-ui PROPERTIES
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+    OUTPUT_NAME "llavon-ime-settings-ui"
+)
 target_compile_definitions(llavon-ime-service PRIVATE
+    LLAVON_IME_VERSION="${PROJECT_VERSION}"
+    WIN32_LEAN_AND_MEAN
+    NOMINMAX
+    UNICODE
+    _UNICODE
+    WINVER=0x0A00
+    _WIN32_WINNT=0x0A00
+)
+target_compile_definitions(llavon-ime-settings-ui PRIVATE
+    LLAVON_IME_BUILD_COMMIT="${IME_WINDOWS_SERVICE_BUILD_COMMIT}"
+    LLAVON_IME_BUILD_NUMBER=${IME_WINDOWS_SERVICE_BUILD_NUMBER}
+    LLAVON_SETTINGS_UI_EXPORTS
     WIN32_LEAN_AND_MEAN
     NOMINMAX
     UNICODE
@@ -169,14 +217,37 @@ target_compile_options(llavon-ime-service PRIVATE
     /utf-8
     /await:strict
 )
+target_compile_options(llavon-ime-settings-ui PRIVATE
+    /W4
+    /WX
+    /utf-8
+    /permissive-
+)
+target_link_options(llavon-ime-service PRIVATE /MANIFEST:NO)
 target_include_directories(llavon-ime-service PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(llavon-ime-settings-ui PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/settings"
+)
 target_link_libraries(llavon-ime-service PRIVATE
     ime-core::ime-core
     asio::asio
     advapi32
     ole32
     oleaut32
+    shell32
     ws2_32
 )
+target_link_libraries(llavon-ime-settings-ui PRIVATE
+    Microsoft::CppWinRT
+    WindowsApp
+    comctl32
+    dwmapi
+    ole32
+    runtimeobject
+)
 
-install(TARGETS llavon-ime-service RUNTIME DESTINATION bin)
+install(TARGETS
+    llavon-ime-service
+    llavon-ime-settings-ui
+    RUNTIME DESTINATION bin
+)

@@ -1,0 +1,59 @@
+#pragma once
+
+#include "update_checker.hpp"
+
+#include <windows.h>
+#include <windows.ui.xaml.hosting.desktopwindowxamlsource.h>
+
+#include <winrt/Windows.Foundation.Collections.h>
+#include <winrt/Windows.UI.Xaml.Controls.h>
+#include <winrt/Windows.UI.Xaml.Hosting.h>
+#include <winrt/base.h>
+
+#include <memory>
+
+namespace llavon::settings {
+
+class SettingsWindow final {
+public:
+    SettingsWindow() = default;
+    SettingsWindow(const SettingsWindow&) = delete;
+    SettingsWindow& operator=(const SettingsWindow&) = delete;
+    ~SettingsWindow();
+
+    bool create(HINSTANCE instance);
+    void show() const noexcept;
+    void hide() const noexcept;
+    void destroy() noexcept;
+    bool pretranslate(MSG& message) const;
+
+private:
+    static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam);
+    LRESULT handle_message(UINT message, WPARAM wparam, LPARAM lparam);
+
+    void initialize_xaml_island();
+    void build_page();
+    void begin_update_check();
+    void apply_update_result(UpdateCheckResult result);
+    void deactivate_update_target() noexcept;
+    void discard_pending_update_results() noexcept;
+    void resize_island() const noexcept;
+    void update_theme();
+    void close_xaml() noexcept;
+
+    HWND window_ = nullptr;
+    HWND island_window_ = nullptr;
+    winrt::Windows::UI::Xaml::Hosting::WindowsXamlManager xaml_manager_{nullptr};
+    winrt::Windows::UI::Xaml::Hosting::DesktopWindowXamlSource xaml_source_{nullptr};
+    winrt::com_ptr<IDesktopWindowXamlSourceNative2> island_native_;
+    winrt::Windows::UI::Xaml::Controls::Grid shell_{nullptr};
+    winrt::Windows::UI::Xaml::Controls::Button update_button_{nullptr};
+    winrt::Windows::UI::Xaml::Controls::TextBlock update_status_{nullptr};
+    winrt::Windows::UI::Xaml::Controls::HyperlinkButton update_download_{nullptr};
+
+    struct UpdateNotificationTarget;
+    std::shared_ptr<UpdateNotificationTarget> update_target_;
+    UpdateChecker update_checker_;
+};
+
+}  // namespace llavon::settings

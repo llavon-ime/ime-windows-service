@@ -5,6 +5,10 @@
     {
       "name": "asio",
       "platform": "windows"
+    },
+    {
+      "name": "cppwinrt",
+      "platform": "windows"
     }
   ]
 }

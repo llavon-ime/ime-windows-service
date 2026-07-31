@@ -1,7 +1,9 @@
 #include <ime-core/core.hpp>
 #include <windows.h>
 
-#include "platform/windows_named_pipe_server.hpp"
+#include "service/prediction_pipe_server.hpp"
+#include "service/settings_ui_loader.hpp"
+#include "service/tray_icon.hpp"
 
 #include <exception>
 #include <filesystem>
@@ -9,6 +11,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -85,6 +88,17 @@ llavon::ime::core::CoreConfig parse_core_config(int argc, char* argv[]) {
     throw std::invalid_argument("invalid command line");
 }
 
+int run_server(llavon::ime::core::CoreConfig config) noexcept {
+    try {
+        llavon::service::PredictionPipeServer server(std::move(config));
+        std::clog << "[SRV] prediction transport: " << server.name() << '\n';
+        return server.run();
+    } catch (const std::exception& error) {
+        std::cerr << "[ERR] fatal: " << error.what() << '\n';
+        return 1;
+    }
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -95,9 +109,24 @@ int main(int argc, char* argv[]) {
             return 0;
         }
 
-        imesvc::WindowsNamedPipeServer server(parse_core_config(argc, argv));
-        std::clog << "[SRV] platform server: " << server.name() << '\n';
-        return server.run();
+        auto config = parse_core_config(argc, argv);
+
+        llavon::service::SettingsUiLoader settings_ui;
+        llavon::service::TrayIcon tray;
+        if (!tray.create(GetModuleHandleW(nullptr), [&settings_ui] { settings_ui.show(); })) {
+            std::cerr << "[WARN] tray initialization failed: " << GetLastError() << '\n';
+            return run_server(std::move(config));
+        }
+
+        int server_result = 1;
+        std::thread server_thread([&tray, &server_result, config = std::move(config)]() mutable {
+            server_result = run_server(std::move(config));
+            tray.notify_server_stopped(server_result);
+        });
+
+        tray.run_message_loop();
+        server_thread.join();
+        return server_result;
     } catch (const std::invalid_argument& error) {
         if (std::string(error.what()) != "invalid command line") {
             std::cerr << "[ERR] fatal: " << error.what() << '\n';

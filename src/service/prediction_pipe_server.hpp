@@ -15,9 +15,9 @@
 #include <string_view>
 #include <vector>
 
-namespace imesvc {
+namespace llavon::service {
 
-namespace windows_named_pipe {
+namespace prediction_pipe {
 
 inline constexpr const wchar_t* pipe_name = L"\\\\.\\pipe\\llavon-ime";
 
@@ -347,28 +347,28 @@ inline asio::awaitable<void> listener(
     }
 }
 
-}  // namespace windows_named_pipe
+}  // namespace prediction_pipe
 
-class WindowsNamedPipeServer final {
+class PredictionPipeServer final {
 public:
-    explicit WindowsNamedPipeServer(llavon::ime::core::CoreConfig config)
+    explicit PredictionPipeServer(llavon::ime::core::CoreConfig config)
         : core_(std::make_shared<llavon::ime::core::Core>(std::move(config))) {}
 
     const char* name() const {
-        return "windows-named-pipe";
+        return "prediction-pipe";
     }
 
     int run() {
         SetConsoleOutputCP(65001);
-        const auto priority = windows_named_pipe::selected_service_priority();
-        windows_named_pipe::configure_windows_scheduling(priority);
-        std::clog << "[SRV] service priority: " << windows_named_pipe::priority_name(priority) << '\n';
+        const auto priority = prediction_pipe::selected_service_priority();
+        prediction_pipe::configure_windows_scheduling(priority);
+        std::clog << "[SRV] service priority: " << prediction_pipe::priority_name(priority) << '\n';
         std::clog << "[SRV] engine backend: llama\n";
 
         std::clog << "[SRV] model loaded\n";
 
         asio::io_context io_ctx;
-        co_spawn(io_ctx, windows_named_pipe::listener(io_ctx, core_), asio::detached);
+        co_spawn(io_ctx, prediction_pipe::listener(io_ctx, core_), asio::detached);
         io_ctx.run();
 
         return 0;
@@ -378,6 +378,6 @@ private:
     std::shared_ptr<llavon::ime::core::Core> core_;
 };
 
-}  // namespace imesvc
+}  // namespace llavon::service
 
 #endif
