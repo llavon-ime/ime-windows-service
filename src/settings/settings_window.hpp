@@ -22,7 +22,7 @@ public:
     ~SettingsWindow();
 
     bool create(HINSTANCE instance);
-    void show() const noexcept;
+    void show() noexcept;
     void hide() const noexcept;
     void destroy() noexcept;
     bool pretranslate(MSG& message) const;

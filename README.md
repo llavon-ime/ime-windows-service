@@ -17,10 +17,12 @@ The service also owns the interactive per-user process shell:
 - Candidate presentation snapshots arrive through the independent
   `\\.\pipe\llavon-ime-candidate-ui` pipe. This transport does not share the
   prediction pipe's connection or protocol.
-- The settings page compares the CI build number embedded at package build time
-  with the rolling release's `latest.json` manifest. Commit IDs are diagnostic
-  only, so rebases do not affect ordering. Its HTTP request runs on a settings
-  worker and is canceled after 300 ms.
+- Whenever the settings window opens, it automatically compares its embedded
+  build identity with the rolling release's `latest.json` manifest. CI builds
+  are ordered by build number. Local development builds still show whether
+  their commit differs from `latest`, without guessing which commit is newer.
+  The HTTP request runs on a settings worker and is canceled after two seconds,
+  so a slow GitHub response never blocks the UI thread.
 
 The settings and candidate modules are intentionally separate DLLs rather than
 additional executables. They do not share an HWND or STA thread.

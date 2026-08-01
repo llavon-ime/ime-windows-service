@@ -33,7 +33,7 @@ constexpr wchar_t latest_manifest_url[] =
     L"https://github.com/llavon-ime/ime-windows/releases/download/latest/latest.json";
 constexpr wchar_t latest_release_url[] =
     L"https://github.com/llavon-ime/ime-windows/releases/tag/latest";
-constexpr auto update_timeout = std::chrono::milliseconds(300);
+constexpr auto update_timeout = std::chrono::seconds(2);
 constexpr double largest_exact_json_integer = 9007199254740991.0;
 
 class WinrtApartment final {
@@ -83,10 +83,6 @@ UpdateCheckResult base_result() {
 
 UpdateCheckResult perform_check() {
     UpdateCheckResult result = base_result();
-    if constexpr (current_build == 0) {
-        result.status = UpdateCheckStatus::development_build;
-        return result;
-    }
     if (!is_commit_id(current_commit)) {
         throw std::runtime_error("this build does not contain a repository commit id");
     }
@@ -101,7 +97,7 @@ UpdateCheckResult perform_check() {
     const auto operation = client.GetStringAsync(Uri(latest_manifest_url));
     if (operation.wait_for(update_timeout) == AsyncStatus::Started) {
         operation.Cancel();
-        throw std::runtime_error("update check timed out after 300 ms");
+        throw std::runtime_error("update check timed out after 2 seconds");
     }
     const winrt::hstring body = operation.GetResults();
 
@@ -122,7 +118,11 @@ UpdateCheckResult perform_check() {
         throw std::runtime_error("latest.json contains invalid build identity");
     }
 
-    if (result.current_build < result.latest_build) {
+    if (result.current_build == 0) {
+        result.status = result.current_commit == result.latest_commit
+                            ? UpdateCheckStatus::up_to_date
+                            : UpdateCheckStatus::development_build;
+    } else if (result.current_build < result.latest_build) {
         result.status = UpdateCheckStatus::update_available;
     } else if (result.current_build > result.latest_build) {
         result.status = UpdateCheckStatus::local_newer;

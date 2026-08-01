@@ -199,12 +199,13 @@ bool SettingsWindow::create(HINSTANCE instance) {
     return true;
 }
 
-void SettingsWindow::show() const noexcept {
+void SettingsWindow::show() noexcept {
     if (!window_) {
         return;
     }
     ShowWindow(window_, IsIconic(window_) ? SW_RESTORE : SW_SHOWNORMAL);
     SetForegroundWindow(window_);
+    begin_update_check();
 }
 
 void SettingsWindow::hide() const noexcept {
@@ -357,7 +358,7 @@ void SettingsWindow::build_page() {
     update_row.Children().Append(update_download_);
     update_section.Children().Append(update_row);
 
-    update_status_ = make_text(L"按下按鈕即可與 latest 建置比較。", caption_text_size);
+    update_status_ = make_text(L"開啟設定時會自動與 latest 建置比較。", caption_text_size);
     update_section.Children().Append(update_status_);
     page.Children().Append(update_section);
 
@@ -436,11 +437,20 @@ void SettingsWindow::apply_update_result(UpdateCheckResult result) {
             update_download_.Visibility(Visibility::Collapsed);
             break;
         }
-        case UpdateCheckStatus::development_build:
-            update_status_.Text(L"這是本機開發版本，沒有 CI 建置編號，無法與 latest 排序。");
+        case UpdateCheckStatus::development_build: {
+            const std::wstring status =
+                build_identity(result.current_build, result.current_commit) + L" 與 latest #" +
+                std::to_wstring(result.latest_build) + L"（" + short_commit(result.latest_commit) +
+                L"）不同，無法判斷新舊。";
+            update_status_.Text(status);
             set_update_status_tone(UpdateStatusTone::secondary);
-            update_download_.Visibility(Visibility::Collapsed);
+            const std::wstring download =
+                L"下載 latest（#" + std::to_wstring(result.latest_build) + L"）";
+            update_download_.Content(winrt::box_value(download));
+            update_download_.NavigateUri(winrt::Windows::Foundation::Uri(result.release_url));
+            update_download_.Visibility(Visibility::Visible);
             break;
+        }
         case UpdateCheckStatus::failed:
         default:
             update_status_.Text(L"無法檢查更新：" + result.error_message);
