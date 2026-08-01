@@ -235,6 +235,15 @@ private:
     static constexpr int row_height = 29;
     static constexpr int bottom_bar_height = 24;
     static constexpr int corner_radius = 9;
+    // CreateWindowInBand and its band identifiers are undocumented Windows implementation details. Band 16 is used
+    // here because diagnostics/window-band-probe empirically established on Windows 11 build 26100 that:
+    //   * SearchHost's visible search window is in band 13;
+    //   * an unsigned, medium-integrity, TokenUIAccess=0 process can create (but cannot move) a window in band 16;
+    //   * a band-16 WS_EX_NOACTIVATE window is above SearchHost, retains foreground focus, and can host/render a
+    //     DesktopWindowXamlSource.
+    // The numeric value is not a public contract. Window::create_in_band_or_fallback dynamically resolves the API
+    // and falls back to ordinary CreateWindowExW whenever it is unavailable or rejected on another Windows build.
+    static constexpr DWORD empirically_verified_candidate_window_band = 16;
     static constexpr std::size_t max_visible_candidates = 36;
     static constexpr std::size_t max_layout_columns = 4;
     static constexpr int page_size = 9;
@@ -290,8 +299,10 @@ private:
         const auto [width, height] = client_size();
         DebugSink::instance().send(L"UI", L"CandidateWindow::ensure_window creating size=(" + std::to_wstring(width) +
                                                L"," + std::to_wstring(height) + L")");
-        if (!create(WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, WS_POPUP, L"拉風輸入法候選字", CW_USEDEFAULT,
-                    CW_USEDEFAULT, width, height, owner_window_)) {
+        if (!create_in_band_or_fallback(empirically_verified_candidate_window_band,
+                                        WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, WS_POPUP,
+                                        L"拉風輸入法候選字", CW_USEDEFAULT, CW_USEDEFAULT, width, height,
+                                        owner_window_)) {
             DebugSink::instance().send(L"UI", L"CandidateWindow::ensure_window create failed");
             return false;
         }

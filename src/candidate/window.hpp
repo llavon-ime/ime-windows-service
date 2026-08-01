@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -49,28 +50,12 @@ public:
 
     bool create(DWORD exStyle, DWORD style, std::wstring_view title, int x, int y, int width, int height,
                 HWND parent = nullptr, HMENU menu = nullptr) {
-        log_state(L"create",
-                  L"request exStyle=" + std::to_wstring(exStyle) + L", style=" + std::to_wstring(style) + L", x=" +
-                      std::to_wstring(x) + L", y=" + std::to_wstring(y) + L", w=" + std::to_wstring(width) + L", h=" +
-                      std::to_wstring(height) + L", parent=" + ptr_to_string(parent));
-        if (hwnd_) {
-            log_state(L"create", L"already created");
-            return true;
-        }
-        if (!register_class()) {
-            log_state(L"create", L"register_class failed");
-            return false;
-        }
+        return create_impl(std::nullopt, exStyle, style, title, x, y, width, height, parent, menu);
+    }
 
-        hwnd_ = CreateWindowExW(exStyle, class_name(), title.empty() ? nullptr : title.data(), style, x, y, width,
-                                height, parent, menu, module_instance(), this);
-
-        if (!hwnd_) {
-            log_state(L"create", L"CreateWindowExW failed, GetLastError=" + std::to_wstring(GetLastError()));
-            return false;
-        }
-        log_state(L"create", L"CreateWindowExW success");
-        return true;
+    bool create_in_band_or_fallback(DWORD band, DWORD exStyle, DWORD style, std::wstring_view title, int x, int y,
+                                    int width, int height, HWND parent = nullptr, HMENU menu = nullptr) {
+        return create_impl(band, exStyle, style, title, x, y, width, height, parent, menu);
     }
 
     void destroy() noexcept {
@@ -166,6 +151,80 @@ protected:
     virtual void on_final_destroy() noexcept {}
 
 private:
+    using CreateWindowInBandFn = HWND(WINAPI*)(DWORD, LPCWSTR, LPCWSTR, DWORD, int, int, int, int, HWND, HMENU,
+                                               HINSTANCE, void*, DWORD);
+    using GetWindowBandFn = BOOL(WINAPI*)(HWND, DWORD*);
+
+    bool create_impl(std::optional<DWORD> preferred_band, DWORD exStyle, DWORD style, std::wstring_view title, int x,
+                     int y, int width, int height, HWND parent, HMENU menu) {
+        log_state(L"create",
+                  L"request exStyle=" + std::to_wstring(exStyle) + L", style=" + std::to_wstring(style) + L", x=" +
+                      std::to_wstring(x) + L", y=" + std::to_wstring(y) + L", w=" + std::to_wstring(width) + L", h=" +
+                      std::to_wstring(height) + L", parent=" + ptr_to_string(parent) + L", preferredBand=" +
+                      (preferred_band ? std::to_wstring(*preferred_band) : L"none"));
+        if (hwnd_) {
+            log_state(L"create", L"already created");
+            return true;
+        }
+        if (!register_class()) {
+            log_state(L"create", L"register_class failed");
+            return false;
+        }
+
+        if (preferred_band) {
+            // CreateWindowInBand is exported by user32.dll but is not a documented Win32 API and has no supported
+            // SDK declaration. Resolve it dynamically so Windows versions that remove or restrict it still use the
+            // ordinary CreateWindowExW path below.
+            const HMODULE user32 = GetModuleHandleW(L"user32.dll");
+            const auto create_window_in_band =
+                user32 ? reinterpret_cast<CreateWindowInBandFn>(GetProcAddress(user32, "CreateWindowInBand"))
+                       : nullptr;
+            if (create_window_in_band) {
+                SetLastError(ERROR_SUCCESS);
+                hwnd_ = create_window_in_band(exStyle, class_name(), title.empty() ? nullptr : title.data(), style,
+                                               x, y, width, height, parent, menu, module_instance(), this,
+                                               *preferred_band);
+                const DWORD band_error = hwnd_ ? ERROR_SUCCESS : GetLastError();
+                if (hwnd_) {
+                    DWORD actual_band = 0;
+                    const auto get_window_band =
+                        reinterpret_cast<GetWindowBandFn>(GetProcAddress(user32, "GetWindowBand"));
+                    const BOOL got_band = get_window_band ? get_window_band(hwnd_, &actual_band) : FALSE;
+                    log_state(L"create",
+                              L"CreateWindowInBand success, requestedBand=" + std::to_wstring(*preferred_band) +
+                                  L", actualBand=" + (got_band ? std::to_wstring(actual_band) : L"unavailable"));
+                    if (!got_band || actual_band == *preferred_band) {
+                        return true;
+                    }
+                    log_state(L"create", L"CreateWindowInBand returned an unexpected band; destroying it and "
+                                               L"falling back to CreateWindowExW");
+                    destroy();
+                } else {
+                    if (band_error == ERROR_ACCESS_DENIED) {
+                        log_state(
+                            L"create",
+                            L"CreateWindowInBand denied with ERROR_ACCESS_DENIED; falling back to CreateWindowExW");
+                    } else {
+                        log_state(L"create", L"CreateWindowInBand failed, GetLastError=" +
+                                                   std::to_wstring(band_error) +
+                                                   L"; falling back to CreateWindowExW");
+                    }
+                }
+            } else {
+                log_state(L"create", L"CreateWindowInBand unavailable; falling back to CreateWindowExW");
+            }
+        }
+
+        hwnd_ = CreateWindowExW(exStyle, class_name(), title.empty() ? nullptr : title.data(), style, x, y, width,
+                                height, parent, menu, module_instance(), this);
+
+        if (!hwnd_) {
+            log_state(L"create", L"CreateWindowExW failed, GetLastError=" + std::to_wstring(GetLastError()));
+            return false;
+        }
+        log_state(L"create", preferred_band ? L"CreateWindowExW fallback success" : L"CreateWindowExW success");
+        return true;
+    }
     static std::wstring ptr_to_string(const void* ptr) {
         wchar_t buf[32] = {};
         swprintf_s(buf, L"%p", ptr);
