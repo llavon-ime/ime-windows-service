@@ -10,6 +10,7 @@
 #include <winrt/Windows.UI.Xaml.Hosting.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.h>
+#include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Windows.UI.h>
 #include <winrt/base.h>
 
@@ -279,6 +280,13 @@ protected:
                 DebugSink::instance().send(L"UI", L"CandidateWindow::handle_message WM_PAINT");
                 paint();
                 return 0;
+            case WM_SETTINGCHANGE:
+            case WM_THEMECHANGED:
+            case WM_SYSCOLORCHANGE:
+                DebugSink::instance().send(L"UI", L"CandidateWindow::handle_message theme changed");
+                render_surface();
+                invalidate(FALSE);
+                return 0;
             default:
                 break;
         }
@@ -543,12 +551,73 @@ private:
         }
 
     private:
+        struct RgbColor {
+            std::uint8_t r;
+            std::uint8_t g;
+            std::uint8_t b;
+        };
+
+        struct ThemePalette {
+            RgbColor surface;
+            RgbColor border;
+            RgbColor selection;
+            RgbColor accent;
+            RgbColor primary_text;
+            RgbColor secondary_text;
+            RgbColor disabled_text;
+            RgbColor divider;
+        };
+
+        static bool system_uses_dark_theme() noexcept {
+            try {
+                const auto background = winrt::Windows::UI::ViewManagement::UISettings().GetColorValue(
+                    winrt::Windows::UI::ViewManagement::UIColorType::Background);
+                // The relative luminance coefficients are scaled to integers. A dark system background
+                // means Windows is using its dark app theme (or an accessibility theme that also needs
+                // the high-contrast dark palette).
+                const unsigned int luminance =
+                    2126u * background.R + 7152u * background.G + 722u * background.B;
+                return luminance < 128u * 10000u;
+            } catch (...) {
+                return false;
+            }
+        }
+
+        static ThemePalette theme_palette(bool dark) noexcept {
+            if (dark) {
+                return {
+                    {32, 32, 32},     // surface
+                    {62, 62, 62},     // border
+                    {59, 59, 59},     // selection
+                    {96, 205, 255},   // accent
+                    {245, 245, 245},  // primary text
+                    {207, 207, 207},  // secondary text
+                    {122, 122, 122},  // disabled text
+                    {61, 61, 61},     // divider
+                };
+            }
+            return {
+                {248, 248, 248},  // surface
+                {221, 221, 221},  // border
+                {237, 237, 237},  // selection
+                {0, 102, 214},    // accent
+                {33, 33, 33},     // primary text
+                {96, 96, 96},     // secondary text
+                {170, 170, 170},  // disabled text
+                {225, 225, 225},  // divider
+            };
+        }
+
         static winrt::Windows::UI::Color color(std::uint8_t r, std::uint8_t g, std::uint8_t b) {
             return winrt::Windows::UI::Color{255, r, g, b};
         }
 
         static winrt::Windows::UI::Xaml::Media::SolidColorBrush brush(std::uint8_t r, std::uint8_t g, std::uint8_t b) {
             return winrt::Windows::UI::Xaml::Media::SolidColorBrush(color(r, g, b));
+        }
+
+        static winrt::Windows::UI::Xaml::Media::SolidColorBrush brush(const RgbColor& value) {
+            return brush(value.r, value.g, value.b);
         }
 
         static double column_width(std::size_t layout_columns) {
@@ -566,7 +635,7 @@ private:
         }
 
         static winrt::Windows::UI::Xaml::Controls::TextBlock build_text(
-            const std::wstring& text, double font_size, std::uint8_t r, std::uint8_t g, std::uint8_t b) {
+            const std::wstring& text, double font_size, const RgbColor& foreground) {
             using namespace winrt::Windows::UI::Text;
             using namespace winrt::Windows::UI::Xaml;
             using namespace winrt::Windows::UI::Xaml::Controls;
@@ -577,7 +646,7 @@ private:
             block.FontFamily(FontFamily(L"Microsoft JhengHei UI"));
             block.FontSize(font_size);
             block.FontWeight(FontWeights::Normal());
-            block.Foreground(brush(r, g, b));
+            block.Foreground(brush(foreground));
             block.TextTrimming(TextTrimming::CharacterEllipsis);
             block.TextWrapping(TextWrapping::NoWrap);
             block.VerticalAlignment(VerticalAlignment::Center);
@@ -585,7 +654,8 @@ private:
         }
 
         static winrt::Windows::UI::Xaml::UIElement build_candidate_item(
-            std::size_t layout_columns, bool show_number, bool selected, int row_number, const std::wstring& value) {
+            std::size_t layout_columns, bool show_number, bool selected, int row_number, const std::wstring& value,
+            const ThemePalette& palette) {
             using namespace winrt::Windows::UI::Text;
             using namespace winrt::Windows::UI::Xaml;
             using namespace winrt::Windows::UI::Xaml::Controls;
@@ -595,7 +665,7 @@ private:
             host.Height(static_cast<double>(CandidateWindow::row_height - 1));
             host.Margin(Thickness{0.0, 0.0, 0.0, 1.0});
             host.CornerRadius(CornerRadius{5.0, 5.0, 5.0, 5.0});
-            host.Background(selected ? brush(237, 237, 237) : brush(0, 0, 0, 0));
+            host.Background(selected ? brush(palette.selection) : brush(0, 0, 0, 0));
 
             StackPanel row;
             row.Orientation(Orientation::Horizontal);
@@ -606,15 +676,16 @@ private:
             accent.Height(15.0);
             accent.Margin(Thickness{6.0, 6.0, 6.0, 6.0});
             accent.CornerRadius(CornerRadius{2.0, 2.0, 2.0, 2.0});
-            accent.Background((show_number && selected) ? brush(0, 102, 214) : brush(0, 0, 0, 0));
+            accent.Background((show_number && selected) ? brush(palette.accent) : brush(0, 0, 0, 0));
             row.Children().Append(accent);
 
-            auto number_text = build_text(show_number ? std::to_wstring(row_number) : L"", 14.0, 96, 96, 96);
+            auto number_text =
+                build_text(show_number ? std::to_wstring(row_number) : L"", 14.0, palette.secondary_text);
             number_text.Width(14.0);
             number_text.Margin(Thickness{0.0, 0.0, 6.0, 0.0});
             row.Children().Append(number_text);
 
-            auto value_text = build_text(value, (layout_columns <= 1) ? 17.0 : 16.0, 33, 33, 33);
+            auto value_text = build_text(value, (layout_columns <= 1) ? 17.0 : 16.0, palette.primary_text);
             value_text.Width(candidate_text_width(layout_columns, show_number));
             value_text.FontWeight(selected ? FontWeights::SemiBold() : FontWeights::Normal());
             value_text.Margin(Thickness{0.0, 0.0, 6.0, 0.0});
@@ -626,7 +697,7 @@ private:
 
         static winrt::Windows::UI::Xaml::UIElement build_column(
             const std::vector<std::wstring>& candidates, std::size_t layout_columns, std::size_t number_column,
-            std::size_t selection_index, std::size_t column_index) {
+            std::size_t selection_index, std::size_t column_index, const ThemePalette& palette) {
             using namespace winrt::Windows::UI::Xaml;
             using namespace winrt::Windows::UI::Xaml::Controls;
 
@@ -641,20 +712,21 @@ private:
             const bool show_number = (column_index == number_column);
             for (std::size_t i = begin; i < end; ++i) {
                 const int row_number = static_cast<int>(i - begin) + 1;
-                column.Children().Append(
-                    build_candidate_item(layout_columns, show_number, i == selection_index, row_number, candidates[i]));
+                column.Children().Append(build_candidate_item(
+                    layout_columns, show_number, i == selection_index, row_number, candidates[i], palette));
             }
 
             return column;
         }
 
         static winrt::Windows::UI::Xaml::UIElement build_footer_icon(
-            const wchar_t* glyph, bool enabled, bool outlined) {
+            const wchar_t* glyph, bool enabled, bool outlined, const ThemePalette& palette) {
             using namespace winrt::Windows::UI::Text;
             using namespace winrt::Windows::UI::Xaml;
             using namespace winrt::Windows::UI::Xaml::Controls;
 
-            auto icon_text = build_text(glyph, 9.5, enabled ? 37 : 170, enabled ? 37 : 170, enabled ? 37 : 170);
+            auto icon_text = build_text(
+                glyph, 9.5, enabled ? palette.primary_text : palette.disabled_text);
             icon_text.FontFamily(winrt::Windows::UI::Xaml::Media::FontFamily(L"Segoe UI Symbol"));
             icon_text.HorizontalAlignment(HorizontalAlignment::Center);
             icon_text.VerticalAlignment(VerticalAlignment::Center);
@@ -665,19 +737,19 @@ private:
             host.Margin(Thickness{0.0, 0.0, 6.0, 0.0});
             host.CornerRadius(CornerRadius{3.0, 3.0, 3.0, 3.0});
             host.BorderThickness(outlined ? Thickness{1.0, 1.0, 1.0, 1.0} : Thickness{0.0, 0.0, 0.0, 0.0});
-            host.BorderBrush(brush(enabled ? 55 : 180, enabled ? 55 : 180, enabled ? 55 : 180));
+            host.BorderBrush(brush(enabled ? palette.primary_text : palette.disabled_text));
             host.Child(icon_text);
             return host;
         }
 
         static winrt::Windows::UI::Xaml::UIElement build_footer(
-            std::size_t layout_columns, bool can_prev_page, bool can_next_page) {
+            std::size_t layout_columns, bool can_prev_page, bool can_next_page, const ThemePalette& palette) {
             using namespace winrt::Windows::UI::Xaml;
             using namespace winrt::Windows::UI::Xaml::Controls;
 
             Border footer;
             footer.BorderThickness(Thickness{0.0, 1.0, 0.0, 0.0});
-            footer.BorderBrush(brush(225, 225, 225));
+            footer.BorderBrush(brush(palette.divider));
             footer.Margin(Thickness{0.0, 3.0, 0.0, 0.0});
             footer.Padding(Thickness{6.0, 4.0, 6.0, 4.0});
 
@@ -687,15 +759,15 @@ private:
             left_group.Orientation(Orientation::Horizontal);
             left_group.HorizontalAlignment(HorizontalAlignment::Left);
             left_group.Children().Append(
-                build_footer_icon(layout_columns <= 1 ? L"\u25B2" : L"\u25C0", can_prev_page, false));
+                build_footer_icon(layout_columns <= 1 ? L"\u25B2" : L"\u25C0", can_prev_page, false, palette));
             left_group.Children().Append(
-                build_footer_icon(layout_columns <= 1 ? L"\u25BC" : L"\u25B6", can_next_page, false));
+                build_footer_icon(layout_columns <= 1 ? L"\u25BC" : L"\u25B6", can_next_page, false, palette));
 
             StackPanel right_group;
             right_group.Orientation(Orientation::Horizontal);
             right_group.HorizontalAlignment(HorizontalAlignment::Right);
-            right_group.Children().Append(build_footer_icon(L"\u21B5", true, true));
-            right_group.Children().Append(build_footer_icon(L"\u2665", true, true));
+            right_group.Children().Append(build_footer_icon(L"\u21B5", true, true, palette));
+            right_group.Children().Append(build_footer_icon(L"\u2665", true, true, palette));
 
             footer_grid.Children().Append(left_group);
             footer_grid.Children().Append(right_group);
@@ -709,9 +781,13 @@ private:
             using namespace winrt::Windows::UI::Xaml;
             using namespace winrt::Windows::UI::Xaml::Controls;
 
+            const bool dark = system_uses_dark_theme();
+            const ThemePalette palette = theme_palette(dark);
+
             Border root;
-            root.Background(brush(248, 248, 248));
-            root.BorderBrush(brush(221, 221, 221));
+            root.RequestedTheme(dark ? ElementTheme::Dark : ElementTheme::Light);
+            root.Background(brush(palette.surface));
+            root.BorderBrush(brush(palette.border));
             root.BorderThickness(Thickness{1.0, 1.0, 1.0, 1.0});
             root.CornerRadius(CornerRadius{10.0, 10.0, 10.0, 10.0});
 
@@ -728,11 +804,11 @@ private:
                 std::max<std::size_t>(1, std::min(layout_columns, CandidateWindow::max_layout_columns));
             for (std::size_t column_index = 0; column_index < visible_columns; ++column_index) {
                 columns.Children().Append(
-                    build_column(candidates, visible_columns, number_column, selection_index, column_index));
+                    build_column(candidates, visible_columns, number_column, selection_index, column_index, palette));
             }
 
             surface.Children().Append(columns);
-            surface.Children().Append(build_footer(visible_columns, can_prev_page, can_next_page));
+            surface.Children().Append(build_footer(visible_columns, can_prev_page, can_next_page, palette));
             root.Child(surface);
             return root;
         }
