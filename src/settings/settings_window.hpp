@@ -39,7 +39,18 @@ private:
     void discard_pending_update_results() noexcept;
     void resize_island() const noexcept;
     void update_theme();
+    void apply_theme_colors();
     void close_xaml() noexcept;
+
+    enum class UpdateStatusTone {
+        secondary,
+        update_available,
+        success,
+        information,
+        error,
+    };
+
+    void set_update_status_tone(UpdateStatusTone tone);
 
     HWND window_ = nullptr;
     HWND island_window_ = nullptr;
@@ -50,6 +61,9 @@ private:
     winrt::Windows::UI::Xaml::Controls::Button update_button_{nullptr};
     winrt::Windows::UI::Xaml::Controls::TextBlock update_status_{nullptr};
     winrt::Windows::UI::Xaml::Controls::HyperlinkButton update_download_{nullptr};
+    winrt::Windows::UI::Xaml::Controls::TextBlock note_{nullptr};
+    UpdateStatusTone update_status_tone_ = UpdateStatusTone::secondary;
+    bool dark_theme_ = false;
 
     struct UpdateNotificationTarget;
     std::shared_ptr<UpdateNotificationTarget> update_target_;

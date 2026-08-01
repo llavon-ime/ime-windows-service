@@ -13,6 +13,7 @@
 
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.UI.Text.h>
+#include <winrt/Windows.UI.ViewManagement.h>
 #include <winrt/Windows.UI.Xaml.Controls.Primitives.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 #include <winrt/Windows.UI.Xaml.h>
@@ -127,6 +128,12 @@ StackPanel make_model_picker() {
 
 SolidColorBrush transparent_brush() {
     return SolidColorBrush(winrt::Windows::UI::Color{0, 0, 0, 0});
+}
+
+bool system_uses_dark_theme() {
+    const auto foreground = winrt::Windows::UI::ViewManagement::UISettings().GetColorValue(
+        winrt::Windows::UI::ViewManagement::UIColorType::Foreground);
+    return 5u * foreground.G + 2u * foreground.R + foreground.B > 8u * 128u;
 }
 
 std::wstring short_commit(std::wstring_view commit) {
@@ -268,6 +275,7 @@ LRESULT SettingsWindow::handle_message(UINT message, WPARAM wparam, LPARAM lpara
         }
         case WM_SETTINGCHANGE:
         case WM_THEMECHANGED:
+        case WM_SYSCOLORCHANGE:
             update_theme();
             return 0;
         case WM_DESTROY:
@@ -346,21 +354,18 @@ void SettingsWindow::build_page() {
     update_download_.Visibility(Visibility::Collapsed);
     update_download_.MinHeight(control_height);
     update_download_.FontSize(body_text_size);
-    update_download_.Foreground(solid_brush(210, 36, 36));
     update_row.Children().Append(update_download_);
     update_section.Children().Append(update_row);
 
     update_status_ = make_text(L"按下按鈕即可與 latest 建置比較。", caption_text_size);
-    update_status_.Foreground(solid_brush(96, 96, 96));
     update_section.Children().Append(update_status_);
     page.Children().Append(update_section);
 
-    auto note = make_text(
+    note_ = make_text(
         L"目前欄位僅用於確認介面排列；實際設定項目與行為會在規格確認後接上。",
         caption_text_size);
-    note.Foreground(solid_brush(96, 96, 96));
-    note.Margin(Thickness{0, 8, 0, 0});
-    page.Children().Append(note);
+    note_.Margin(Thickness{0, 8, 0, 0});
+    page.Children().Append(note_);
 
     scroll.Content(page);
     shell_.Children().Append(scroll);
@@ -374,7 +379,7 @@ void SettingsWindow::begin_update_check() {
 
     update_button_.IsEnabled(false);
     update_status_.Text(L"正在檢查 latest 建置…");
-    update_status_.Foreground(solid_brush(96, 96, 96));
+    set_update_status_tone(UpdateStatusTone::secondary);
     if (update_download_) {
         update_download_.Visibility(Visibility::Collapsed);
     }
@@ -405,7 +410,7 @@ void SettingsWindow::apply_update_result(UpdateCheckResult result) {
                 L"有新建置：#" + std::to_wstring(result.current_build) + L" → #" +
                 std::to_wstring(result.latest_build) + L"。";
             update_status_.Text(status);
-            update_status_.Foreground(solid_brush(210, 36, 36));
+            set_update_status_tone(UpdateStatusTone::update_available);
 
             const std::wstring download =
                 L"下載 latest（#" + std::to_wstring(result.latest_build) + L"）";
@@ -418,7 +423,7 @@ void SettingsWindow::apply_update_result(UpdateCheckResult result) {
             const std::wstring status =
                 L"已是最新建置：" + build_identity(result.current_build, result.current_commit) + L"。";
             update_status_.Text(status);
-            update_status_.Foreground(solid_brush(48, 120, 72));
+            set_update_status_tone(UpdateStatusTone::success);
             update_download_.Visibility(Visibility::Collapsed);
             break;
         }
@@ -427,19 +432,19 @@ void SettingsWindow::apply_update_result(UpdateCheckResult result) {
                 L"目前建置 #" + std::to_wstring(result.current_build) +
                 L" 比 latest #" + std::to_wstring(result.latest_build) + L" 新。";
             update_status_.Text(status);
-            update_status_.Foreground(solid_brush(48, 96, 156));
+            set_update_status_tone(UpdateStatusTone::information);
             update_download_.Visibility(Visibility::Collapsed);
             break;
         }
         case UpdateCheckStatus::development_build:
             update_status_.Text(L"這是本機開發版本，沒有 CI 建置編號，無法與 latest 排序。");
-            update_status_.Foreground(solid_brush(96, 96, 96));
+            set_update_status_tone(UpdateStatusTone::secondary);
             update_download_.Visibility(Visibility::Collapsed);
             break;
         case UpdateCheckStatus::failed:
         default:
             update_status_.Text(L"無法檢查更新：" + result.error_message);
-            update_status_.Foreground(solid_brush(180, 54, 54));
+            set_update_status_tone(UpdateStatusTone::error);
             update_download_.Visibility(Visibility::Collapsed);
             break;
     }
@@ -477,7 +482,14 @@ void SettingsWindow::update_theme() {
     if (!window_) {
         return;
     }
-    BOOL dark = FALSE;
+
+    try {
+        dark_theme_ = system_uses_dark_theme();
+    } catch (...) {
+        // Keep the last successfully detected theme if UISettings is temporarily unavailable.
+    }
+
+    const BOOL dark = dark_theme_ ? TRUE : FALSE;
     DwmSetWindowAttribute(window_, 20, &dark, sizeof(dark));
 
     const DWM_SYSTEMBACKDROP_TYPE backdrop = DWMSBT_MAINWINDOW;
@@ -485,8 +497,54 @@ void SettingsWindow::update_theme() {
         window_, DWMWA_SYSTEMBACKDROP_TYPE, &backdrop, sizeof(backdrop));
 
     if (shell_) {
-        shell_.RequestedTheme(ElementTheme::Light);
-        shell_.Background(SUCCEEDED(backdrop_result) ? transparent_brush() : solid_brush(248, 244, 235));
+        shell_.RequestedTheme(dark_theme_ ? ElementTheme::Dark : ElementTheme::Light);
+        shell_.Background(
+            SUCCEEDED(backdrop_result)
+                ? transparent_brush()
+                : (dark_theme_ ? solid_brush(32, 32, 32) : solid_brush(248, 244, 235)));
+    }
+    apply_theme_colors();
+}
+
+void SettingsWindow::apply_theme_colors() {
+    if (note_) {
+        note_.Foreground(dark_theme_ ? solid_brush(190, 190, 190) : solid_brush(96, 96, 96));
+    }
+    if (update_download_) {
+        update_download_.Foreground(
+            dark_theme_ ? solid_brush(255, 153, 164) : solid_brush(210, 36, 36));
+    }
+    set_update_status_tone(update_status_tone_);
+}
+
+void SettingsWindow::set_update_status_tone(UpdateStatusTone tone) {
+    update_status_tone_ = tone;
+    if (!update_status_) {
+        return;
+    }
+
+    switch (tone) {
+        case UpdateStatusTone::update_available:
+            update_status_.Foreground(
+                dark_theme_ ? solid_brush(255, 153, 164) : solid_brush(210, 36, 36));
+            break;
+        case UpdateStatusTone::success:
+            update_status_.Foreground(
+                dark_theme_ ? solid_brush(108, 203, 95) : solid_brush(48, 120, 72));
+            break;
+        case UpdateStatusTone::information:
+            update_status_.Foreground(
+                dark_theme_ ? solid_brush(117, 182, 231) : solid_brush(48, 96, 156));
+            break;
+        case UpdateStatusTone::error:
+            update_status_.Foreground(
+                dark_theme_ ? solid_brush(255, 153, 164) : solid_brush(180, 54, 54));
+            break;
+        case UpdateStatusTone::secondary:
+        default:
+            update_status_.Foreground(
+                dark_theme_ ? solid_brush(190, 190, 190) : solid_brush(96, 96, 96));
+            break;
     }
 }
 
@@ -496,6 +554,7 @@ void SettingsWindow::close_xaml() noexcept {
     update_button_ = nullptr;
     update_status_ = nullptr;
     update_download_ = nullptr;
+    note_ = nullptr;
     shell_ = nullptr;
     try {
         if (xaml_source_) {
