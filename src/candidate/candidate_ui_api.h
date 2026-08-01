@@ -33,6 +33,12 @@ typedef struct llavon_candidate_ui_presentation {
     uint32_t number_column;
     uint8_t can_prev_page;
     uint8_t can_next_page;
+    // This consumes the legacy structure's tail padding so anchor_top starts
+    // outside the legacy sizeof boundary and can be detected via struct_size.
+    uint32_t reserved_anchor_rect;
+    // Top edge of the TSF GetTextExt rectangle. Older callers may omit it and
+    // the candidate UI will fall back to anchor_y.
+    int32_t anchor_top;
 } llavon_candidate_ui_presentation;
 
 // Starts the candidate UI's dedicated STA thread. Calling this function more

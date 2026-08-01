@@ -174,10 +174,10 @@ public:
             L"UI", L"CandidateWindow::show_near_cursor cursor=(" + std::to_wstring(cursor.x) + L"," +
                        std::to_wstring(cursor.y) + L"), size=(" + std::to_wstring(width) + L"," +
                        std::to_wstring(height) + L")");
-        show_at(cursor.x, cursor.y);
+        show_at(cursor.x, cursor.y, cursor.y);
     }
 
-    void show_at(int anchorX, int anchorY) {
+    void show_at(int anchorX, int anchorTop, int anchorBottom) {
         if (candidates_.empty()) {
             DebugSink::instance().send(L"UI", L"CandidateWindow::show_at empty -> hide");
             hide();
@@ -191,9 +191,9 @@ public:
         sync_window_dpi();
         const auto [width, height] = client_size();
         int x = anchorX + scale(popup_offset_x);
-        int y = anchorY + scale(popup_offset_y);
+        int y = anchorBottom + scale(popup_offset_y);
 
-        const POINT anchor = {anchorX, anchorY};
+        const POINT anchor = {anchorX, anchorBottom};
         const HMONITOR monitor = MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST);
         MONITORINFO monitorInfo = {};
         monitorInfo.cbSize = sizeof(monitorInfo);
@@ -205,14 +205,18 @@ public:
                 x = monitorInfo.rcWork.left;
             }
             if (y + height > monitorInfo.rcWork.bottom) {
-                y = anchorY - height - scale(4);
+                // Flip above the complete TSF GetTextExt rectangle, not above rc.bottom. Using the bottom edge here
+                // makes the candidate window overlap the composition text whenever it is forced upward at the
+                // monitor work-area boundary.
+                y = anchorTop - height - scale(4);
             }
             if (y < monitorInfo.rcWork.top) {
                 y = monitorInfo.rcWork.top;
             }
         }
         DebugSink::instance().send(
-            L"UI", L"CandidateWindow::show_at anchor=(" + std::to_wstring(anchorX) + L"," + std::to_wstring(anchorY) +
+            L"UI", L"CandidateWindow::show_at anchorRect=(" + std::to_wstring(anchorX) + L"," +
+                       std::to_wstring(anchorTop) + L".." + std::to_wstring(anchorBottom) +
                        L"), final=(" + std::to_wstring(x) + L"," + std::to_wstring(y) + L"), size=(" +
                        std::to_wstring(width) + L"," + std::to_wstring(height) + L")");
         if (use_uwp_xaml_popup_) {

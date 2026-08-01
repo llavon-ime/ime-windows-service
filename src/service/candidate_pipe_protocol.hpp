@@ -5,7 +5,7 @@
 namespace llavon::service::candidate_pipe_protocol {
 
 inline constexpr const wchar_t* pipe_name = L"\\\\.\\pipe\\llavon-ime-candidate-ui";
-inline constexpr uint16_t protocol_version = 2;
+inline constexpr uint16_t protocol_version = 3;
 inline constexpr uint32_t maximum_candidate_count = 36;
 inline constexpr uint32_t maximum_candidate_length = 256;
 inline constexpr uint32_t maximum_layout_columns = 4;

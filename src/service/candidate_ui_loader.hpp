@@ -15,6 +15,7 @@ struct CandidateUiSnapshot final {
     uint64_t owner_window = 0;
     int32_t anchor_x = 0;
     int32_t anchor_y = 0;
+    int32_t anchor_top = 0;
     std::vector<std::wstring> candidates;
     uint32_t selection_index = 0;
     uint32_t layout_columns = 1;

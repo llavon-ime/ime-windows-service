@@ -122,6 +122,7 @@ private:
         if (!co_await read_value(pipe, snapshot.owner_window) ||
             !co_await read_value(pipe, snapshot.anchor_x) ||
             !co_await read_value(pipe, snapshot.anchor_y) ||
+            !co_await read_value(pipe, snapshot.anchor_top) ||
             !co_await read_value(pipe, candidate_count) ||
             !co_await read_value(pipe, snapshot.selection_index) ||
             !co_await read_value(pipe, snapshot.layout_columns) ||

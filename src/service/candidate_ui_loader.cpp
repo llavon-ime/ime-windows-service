@@ -72,6 +72,8 @@ bool CandidateUiLoader::present(const CandidateUiSnapshot& snapshot) {
         snapshot.number_column,
         static_cast<uint8_t>(snapshot.can_prev_page ? 1 : 0),
         static_cast<uint8_t>(snapshot.can_next_page ? 1 : 0),
+        0,
+        snapshot.anchor_top,
     };
     const std::int32_t result = present_(&presentation);
     if (result != 0) {

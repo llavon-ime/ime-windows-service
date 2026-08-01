@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -32,6 +33,7 @@ struct Presentation final {
     HWND owner_window = nullptr;
     int anchor_x = 0;
     int anchor_y = 0;
+    int anchor_top = 0;
     std::vector<std::wstring> candidates;
     uint32_t selection_index = 0;
     uint32_t layout_columns = 1;
@@ -127,7 +129,11 @@ private:
     static int32_t copy_presentation(
         const llavon_candidate_ui_presentation* source,
         Presentation& destination) {
-        if (!source || source->struct_size < sizeof(llavon_candidate_ui_presentation) ||
+        constexpr std::size_t legacy_presentation_size =
+            offsetof(llavon_candidate_ui_presentation, anchor_top);
+        constexpr std::size_t anchor_top_end =
+            offsetof(llavon_candidate_ui_presentation, anchor_top) + sizeof(int32_t);
+        if (!source || source->struct_size < legacy_presentation_size ||
             source->candidate_count == 0 || source->candidate_count > maximum_candidate_count ||
             !source->candidates || source->selection_index >= source->candidate_count ||
             source->layout_columns == 0 || source->layout_columns > maximum_layout_columns ||
@@ -140,6 +146,9 @@ private:
                 static_cast<ULONG_PTR>(source->owner_window));
             destination.anchor_x = source->anchor_x;
             destination.anchor_y = source->anchor_y;
+            destination.anchor_top =
+                source->struct_size >= anchor_top_end ? std::min(source->anchor_top, source->anchor_y)
+                                                      : source->anchor_y;
             destination.selection_index = source->selection_index;
             destination.layout_columns = source->layout_columns;
             destination.number_column = source->number_column;
@@ -274,7 +283,8 @@ private:
             presentation->can_prev_page, presentation->can_next_page);
         candidate_window_->update_candidates(presentation->candidates);
         candidate_window_->set_selection(presentation->selection_index);
-        candidate_window_->show_at(presentation->anchor_x, presentation->anchor_y);
+        candidate_window_->show_at(
+            presentation->anchor_x, presentation->anchor_top, presentation->anchor_y);
     }
 
     bool post(UINT message) const noexcept {
